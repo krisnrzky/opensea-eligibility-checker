@@ -122,6 +122,10 @@ Returns authoritative stage labels: **GTD**, **FCFS**, **WL**, **BlockPass**, **
 
 7. **Rate limiting.** GraphQL returns 429 if queried too fast. Add 2-3s delay between batch wallet checks.
 
+8. **Two different API v2 endpoints.** `/drops/{slug}` returns stage info (labels, timing, price) but NO social links. `/collections/{slug}` returns social links (Twitter, Discord, etc.) but NO stage info. Query both for a complete picture. See `references/social-links-lookup.md`.
+
+9. **Twitter handle lookup.** The `twitter_username` field from `/collections/{slug}` is the bare handle (e.g. `NeokitsuneNft`), not a URL. Construct as `https://x.com/{handle}`.
+
 ## Batch Checking Multiple Collections
 
 When checking eligibility for many drops at once (e.g. a daily mint list):
@@ -132,6 +136,8 @@ When checking eligibility for many drops at once (e.g. a daily mint list):
 4. **Cross-reference API v2 for stage labels.** GraphQL only returns `SIGNED_PRESALE`/`PUBLIC_SALE` — it does NOT tell you which stage is GTD vs FCFS vs WL. If the user's mint list specifies stage types, map them by `stageIndex` order (stage 1 = first presale = usually GTD/WL, last presale = usually FCFS, index 0 = public). For authoritative labels, query API v2 separately.
 
 ### Batch script pattern
+
+A ready-to-use template is at `scripts/batch_eligibility_template.py` — copy it, edit the `collections` list, and run. Key principles:
 
 ```python
 import sys, os, json, time
@@ -173,7 +179,7 @@ Always show price in **both ETH and USD ($)**. Convert realtime using Coinbase o
 When eligibility check finds a wallet **eligible for GTD/FCFS/WL** (not public-only), provide **full mint data** for that collection:
 
 1. **Collection name + OpenSea drop link** — `https://opensea.io/drops/{slug}`
-2. **Twitter link** — search the collection's Twitter/X account (from OpenSea drop page or API v2 `creator` field). Include `https://x.com/{handle}`.
+2. **Twitter link** — fetch from API v2 `GET https://api.opensea.io/api/v2/collections/{slug}` → `twitter_username` field. Include `https://x.com/{handle}`. Also returns `discord_url`, `telegram_url`, `instagram_username`. See `references/social-links-lookup.md` for details.
 3. **Eligible stages** — which stages W0 (or checked wallet) is eligible for
 4. **Price per stage** — ETH + USD ($), realtime converted
 5. **Max per wallet** — `maxTotalMintableByWallet` per stage
@@ -202,3 +208,9 @@ Start: 20:00 WIB hari ini
 - [ ] No private keys logged in output
 - [ ] Batch check: single SIWE login, 1-2s delay between queries
 - [ ] GitHub publish: no vault refs, wallet addresses, or API keys in repo
+
+## Support Files
+
+- `scripts/opensea_eligibility.py` — standalone eligibility checker (CLI, no vault dependency)
+- `scripts/batch_eligibility_template.py` — batch check template for multiple collections (copy + edit collections list + run)
+- `references/social-links-lookup.md` — how to fetch Twitter/Discord/social links via API v2 `/collections/{slug}` endpoint
