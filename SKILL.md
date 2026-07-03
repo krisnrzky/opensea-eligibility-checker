@@ -26,6 +26,7 @@ Check wallet eligibility for OpenSea NFT drops using 3 complementary methods. St
 **Don't use for:**
 - Non-OpenSea drops (uses SeaDrop contract + OpenSea GraphQL specifically)
 - Minting (this is read-only eligibility check, not a minting tool)
+- Solana drops (ETH-only — SeaDrop + EVM SIWE. Solana drops need a separate checker)
 
 ## Quick Reference
 
@@ -121,6 +122,76 @@ Returns authoritative stage labels: **GTD**, **FCFS**, **WL**, **BlockPass**, **
 
 7. **Rate limiting.** GraphQL returns 429 if queried too fast. Add 2-3s delay between batch wallet checks.
 
+## Batch Checking Multiple Collections
+
+When checking eligibility for many drops at once (e.g. a daily mint list):
+
+1. **Login once, reuse session.** Call `siwe_login()` once → get authenticated `httpx.Client` → pass it to `check_eligibility_graphql()` for every collection. Do NOT re-login per collection — SIWE is rate-limited and slow.
+2. **Add 1-2s delay between GraphQL queries** to avoid 429 rate limiting.
+3. **Use structured JSON output, not stdout parsing.** The script's pretty-printed JSON output gets truncated in terminal capture (Hermes `terminal()` caps at ~50KB). Write a custom batch script that imports `siwe_login` + `check_eligibility_graphql` directly and outputs `json.dumps(results)` — parse the structured data instead of regex-matching truncated stdout.
+4. **Cross-reference API v2 for stage labels.** GraphQL only returns `SIGNED_PRESALE`/`PUBLIC_SALE` — it does NOT tell you which stage is GTD vs FCFS vs WL. If the user's mint list specifies stage types, map them by `stageIndex` order (stage 1 = first presale = usually GTD/WL, last presale = usually FCFS, index 0 = public). For authoritative labels, query API v2 separately.
+
+### Batch script pattern
+
+```python
+import sys, os, json, time
+sys.path.insert(0, os.path.expanduser("~/superagent-v4/skills/hermes/scripts"))
+from opensea_eligibility import siwe_login, check_eligibility_graphql, get_wallet_from_vault
+
+addr, pk = get_wallet_from_vault("wallet_0")
+client = siwe_login(addr, pk)  # Login ONCE
+
+results = []
+for slug, name, ts, price, supply in collections:
+    data = check_eligibility_graphql(client, addr, slug)
+    drop = data.get("dropBySlug", {})
+    stages = [{"type": s["stageType"], "eligible": s["isEligible"],
+               "max": s["maxTotalMintableByWallet"],
+               "price_eth": s.get("eligiblePrice",{}).get("token",{}).get("unit",0)}
+              for s in drop.get("stages", [])]
+    results.append({"name": name, "slug": slug, "stages": stages})
+    time.sleep(1)
+
+print(json.dumps(results, indent=2))
+```
+
+## Publishing to GitHub
+
+When sharing this skill as a public repo:
+
+1. **Scrub internal references.** Remove any `references/*.md` files that mention vault structure, wallet aliases (`wallet_0`, `main_evm`), wallet counts, or internal script paths (`~/superagent-v4/...`). Run: `grep -rnE 'wallet_[0-9]|main_evm|vault|superagent|\.env' . --include="*.md" --include="*.py"`
+2. **Keep only 3 files:** `README.md`, `SKILL.md`, `scripts/opensea_eligibility.py`
+3. **Standalone script only.** The published `scripts/opensea_eligibility.py` must have NO vault dependency — all inputs via CLI args (`--address`, `--private-key`, `--slug`, `--nft-address`, `--api-key`). The vault-tied version stays internal.
+4. **No API keys, wallet addresses, or credentials** in any pushed file.
+
+## Price Reporting (user preference)
+
+Always show price in **both ETH and USD ($)**. Convert realtime using Coinbase or Coingecko spot price at report time. GraphQL `eligiblePrice.usd` field provides USD directly — use it when available.
+
+## Eligible Stage Output Format (user preference)
+
+When eligibility check finds a wallet **eligible for GTD/FCFS/WL** (not public-only), provide **full mint data** for that collection:
+
+1. **Collection name + OpenSea drop link** — `https://opensea.io/drops/{slug}`
+2. **Twitter link** — search the collection's Twitter/X account (from OpenSea drop page or API v2 `creator` field). Include `https://x.com/{handle}`.
+3. **Eligible stages** — which stages W0 (or checked wallet) is eligible for
+4. **Price per stage** — ETH + USD ($), realtime converted
+5. **Max per wallet** — `maxTotalMintableByWallet` per stage
+6. **Start time** — WIB (UTC+7), converted from on-chain/API `start_time`
+7. **Supply** — total supply if available
+
+**Example output:**
+```
+🎯 Neokitsune — W0 ✅ GTD + FCFS
+Link: https://opensea.io/drops/neokitsune
+Twitter: https://x.com/neokitsune
+Stage 1 (GTD): ✅ eligible, 0.002 ETH ($3.49), max 2/wallet
+Stage 2 (FCFS): ✅ eligible, 0.002 ETH ($3.49), max 2/wallet
+Start: 20:00 WIB hari ini
+```
+
+**Skip public-only collections** from detailed output — just list name + link + public price in a compact table. Focus detailed output on GTD/WL/FCFS eligible ones only.
+
 ## Verification Checklist
 
 - [ ] `pip install httpx eth-account` succeeds
@@ -129,3 +200,5 @@ Returns authoritative stage labels: **GTD**, **FCFS**, **WL**, **BlockPass**, **
 - [ ] SIWE login produces `access_token` cookie
 - [ ] GraphQL returns `dropBySlug` with `stages` array
 - [ ] No private keys logged in output
+- [ ] Batch check: single SIWE login, 1-2s delay between queries
+- [ ] GitHub publish: no vault refs, wallet addresses, or API keys in repo
