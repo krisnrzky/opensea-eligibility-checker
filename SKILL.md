@@ -96,7 +96,7 @@ Eligibility = `window_open AND NOT sold_out AND NOT cap_reached`
 
 Returns authoritative stage labels: **GTD**, **FCFS**, **WL**, **BlockPass**, **Public** — plus `start_time`, `end_time`, `max_per_wallet`, `price` (in wei).
 
-> Get your API key at https://opensea.io/settings → API Keys
+> Get your API key at https://opensea.io/settings/developer → API Keys
 
 ### Method 3: SIWE + GraphQL
 

@@ -25,7 +25,7 @@ python scripts/opensea_eligibility.py --address 0x... --nft-address 0x... --meth
 
 ## Get API Key
 
-https://opensea.io/settings → API Keys
+https://opensea.io/settings/developer → API Keys
 
 ## License
 
